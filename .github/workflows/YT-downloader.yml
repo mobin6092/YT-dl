@@ -208,7 +208,7 @@ jobs:
 
             echo "🚀 Pushing batch $BATCH_NUM: files $((i+1))–$(( i + ${#BATCH[@]} )) of $TOTAL"
 
-            git add "${BATCH[@]}"
+            git add -f "${BATCH[@]}"          # ← اینجا -f اضافه شد
             git commit -m "YouTube download — batch $BATCH_NUM [skip ci]"
 
             # Pull with rebase before each push
