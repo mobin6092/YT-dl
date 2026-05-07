@@ -1,4 +1,4 @@
-name: 01- 🎬 Youtube Downloader 
+name: 01- 🎬 Youtube Downloader
 
 on:
   workflow_dispatch:
@@ -29,15 +29,14 @@ jobs:
         uses: actions/checkout@v4
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
+        env:
+          FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true   # اختیاری: برای خلاص شدن از اخطار Node 20
 
       - name: Start WARP Container
         run: |
           echo "🚀 Starting Cloudflare WARP container..."
 
-          # Create docker network
           docker network create warp-net || true
-
-          # Run WARP container
           docker run -d \
             --name warp \
             --restart=always \
@@ -52,7 +51,6 @@ jobs:
           echo "⏳ Waiting for WARP to initialize (30 seconds)..."
           sleep 30
 
-          # Check WARP status
           echo "🔍 Checking WARP status..."
           for i in {1..10}; do
             RESULT=$(curl -s --max-time 10 --socks5-hostname 127.0.0.1:1080 https://cloudflare.com/cdn-cgi/trace 2>/dev/null || echo "failed")
@@ -66,7 +64,6 @@ jobs:
             fi
           done
 
-          # Final check
           FINAL=$(curl -s --max-time 10 --socks5-hostname 127.0.0.1:1080 https://cloudflare.com/cdn-cgi/trace 2>/dev/null || echo "failed")
           if echo "$FINAL" | grep -qE "warp=(on|plus)"; then
             echo "✅ WARP proxy is ready!"
@@ -94,25 +91,31 @@ jobs:
           echo "📹 Downloading: $URL"
           echo "📊 Quality: $QUALITY"
 
-          # Set format based on quality
+          # Set format and optional audio flags
           case "$QUALITY" in
             "audio")
-              FORMAT="bestaudio"
+              FORMAT="bestaudio/best"
+              AUDIO_FLAGS="--extract-audio --audio-format mp3"
               ;;
             "best")
               FORMAT="bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best"
+              AUDIO_FLAGS=""
               ;;
             "1080")
               FORMAT="bestvideo[height<=1080][ext=mp4]+bestaudio[ext=m4a]/best[height<=1080][ext=mp4]/best"
+              AUDIO_FLAGS=""
               ;;
             "720")
               FORMAT="bestvideo[height<=720][ext=mp4]+bestaudio[ext=m4a]/best[height<=720][ext=mp4]/best"
+              AUDIO_FLAGS=""
               ;;
             "480")
               FORMAT="bestvideo[height<=480][ext=mp4]+bestaudio[ext=m4a]/best[height<=480][ext=mp4]/best"
+              AUDIO_FLAGS=""
               ;;
             *)
               FORMAT="bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best"
+              AUDIO_FLAGS=""
               ;;
           esac
 
@@ -120,7 +123,7 @@ jobs:
           yt-dlp \
             --proxy "socks5://127.0.0.1:1080" \
             --format "$FORMAT" \
-            --merge-output-format mp4 \
+            $AUDIO_FLAGS \
             --output "tmp_downloads/%(title)s.%(ext)s" \
             --no-playlist \
             --retries 10 \
@@ -136,7 +139,7 @@ jobs:
               yt-dlp \
                 --proxy "socks5://127.0.0.1:1080" \
                 --format "$FORMAT" \
-                --merge-output-format mp4 \
+                $AUDIO_FLAGS \
                 --output "tmp_downloads/%(title)s.%(ext)s" \
                 --no-playlist \
                 --retries 10 \
@@ -149,7 +152,7 @@ jobs:
           echo "✅ Download complete!"
           ls -la tmp_downloads/
 
-          # Handle file splitting
+          # Handle file splitting / moving
           for FILE in tmp_downloads/*; do
             [ -f "$FILE" ] || continue
             SIZE=$(stat -c%s "$FILE")
@@ -182,15 +185,12 @@ jobs:
 
           echo "Preparing to commit files..."
 
-          # Check if videos folder has any files
           if [ ! -d "videos" ] || [ -z "$(ls -A videos 2>/dev/null)" ]; then
             echo "❌ No files to commit in videos folder"
             exit 1
           fi
 
-          # Collect all new/modified files
           mapfile -t ALL_FILES < <(find videos -type f -name "*")
-
           TOTAL=${#ALL_FILES[@]}
           echo "📦 Total files to push: $TOTAL"
 
@@ -208,10 +208,9 @@ jobs:
 
             echo "🚀 Pushing batch $BATCH_NUM: files $((i+1))–$(( i + ${#BATCH[@]} )) of $TOTAL"
 
-            git add -f "${BATCH[@]}"          # ← اینجا -f اضافه شد
+            git add -f "${BATCH[@]}"          # فایل‌های zip/parchive با force اضافه می‌شوند
             git commit -m "YouTube download — batch $BATCH_NUM [skip ci]"
 
-            # Pull with rebase before each push
             git pull --rebase origin "$BRANCH" || true
             git push origin HEAD:"$BRANCH"
 
